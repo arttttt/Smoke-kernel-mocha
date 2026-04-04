@@ -591,7 +591,7 @@ static int nvhost_ioctl_channel_submit(struct nvhost_channel_userctx *ctx,
 						u32 *buf = (u32 *)mem +
 							(g->offset / sizeof(u32));
 						isp_trace_hex("  GCMD", buf,
-							min(g->words, (u32)512));
+							g->words);
 						nvhost_memmgr_munmap(g->ref, mem);
 					}
 				}

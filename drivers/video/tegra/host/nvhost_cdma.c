@@ -524,7 +524,7 @@ void nvhost_cdma_push_gather(struct nvhost_cdma *cdma,
 			if (mem) {
 				u32 *buf = (u32 *)mem + (offset / sizeof(u32));
 				isp_trace_hex("GDATA", buf,
-					words < 512 ? words : 512);
+					words);
 				nvhost_memmgr_munmap(handle, mem);
 			}
 		}
