@@ -150,7 +150,8 @@ void nvhost_module_busy(struct platform_device *dev)
 	int ret = 0;
 
 	if ((pdata->moduleid & 0xFFFF) == NVHOST_MODULE_ISP)
-		isp_trace_log("MODULE_BUSY dev=%s", dev_name(&dev->dev));
+		isp_trace_cat(ISP_CAT_POWER, "BUSY dev=%s",
+			      dev_name(&dev->dev));
 
 	/* Explicitly turn on the host1x clocks
 	 * - This is needed as host1x driver sets ignore_children = true
@@ -205,7 +206,8 @@ void nvhost_module_idle_mult(struct platform_device *dev, int refs)
 	struct nvhost_device_data *pdata = platform_get_drvdata(dev);
 
 	if ((pdata->moduleid & 0xFFFF) == NVHOST_MODULE_ISP)
-		isp_trace_log("MODULE_IDLE dev=%s refs=%d", dev_name(&dev->dev), refs);
+		isp_trace_cat(ISP_CAT_POWER, "IDLE dev=%s refs=%d",
+			      dev_name(&dev->dev), refs);
 
 #ifdef CONFIG_PM_RUNTIME
 	/* call idle callback only if the device is turned on. */

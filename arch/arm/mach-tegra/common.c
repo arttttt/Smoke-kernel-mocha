@@ -2181,8 +2181,8 @@ void __init tegra_reserve_ramoops_memory(unsigned long reserve_size)
   		pr_err("Failed to remove carveout %08lx@%08llx from memory map\n",
   			reserve_size, (u64)ramoops_data.mem_address);
 
-	/* Reserve 16MB for ISP trace before hardboot region */
-	isp_trace_phys_size = SZ_16M;
+	/* Reserve 64MB for ISP trace before hardboot region */
+	isp_trace_phys_size = SZ_64M;
 	isp_trace_phys_addr = ramoops_data.mem_address - SZ_1M - isp_trace_phys_size;
 	if (memblock_reserve(isp_trace_phys_addr, isp_trace_phys_size))
 		pr_err("Failed to reserve ISP trace %08lx@%08llx\n",

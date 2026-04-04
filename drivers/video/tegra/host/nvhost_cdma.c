@@ -492,7 +492,7 @@ void nvhost_cdma_push(struct nvhost_cdma *cdma, u32 op1, u32 op2)
 
 	/* ISP push buffer trace */
 	if (pdata && (pdata->moduleid & 0xFFFF) == NVHOST_MODULE_ISP)
-		isp_trace_log("PB %08x %08x", op1, op2);
+		isp_trace_cat(ISP_CAT_CDMA, "PB %08x %08x", op1, op2);
 
 	nvhost_cdma_push_gather(cdma, NULL, NULL, 0, op1, op2);
 }
@@ -517,14 +517,15 @@ void nvhost_cdma_push_gather(struct nvhost_cdma *cdma,
 	if (pdata && (pdata->moduleid & 0xFFFF) == NVHOST_MODULE_ISP) {
 		u32 words = op1 & 0x3fff;
 
-		isp_trace_log("PB_G %08x %08x off=%u words=%u", op1, op2, offset, words);
+		isp_trace_cat(ISP_CAT_CDMA, "PB_G %08x %08x off=%u words=%u",
+			      op1, op2, offset, words);
 
 		if (handle) {
 			void *mem = nvhost_memmgr_mmap(handle);
 			if (mem) {
 				u32 *buf = (u32 *)mem + (offset / sizeof(u32));
-				isp_trace_hex("GDATA", buf,
-					words);
+				isp_trace_cat_hex(ISP_CAT_GATHER,
+					"GDATA", buf, words);
 				nvhost_memmgr_munmap(handle, mem);
 			}
 		}

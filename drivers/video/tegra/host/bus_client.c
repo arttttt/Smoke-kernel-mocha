@@ -126,7 +126,7 @@ int nvhost_read_module_regs(struct platform_device *ndev,
 	while (count--) {
 		*(values++) = readl(p);
 		if (is_isp)
-			isp_trace_log("PIO_RD off=0x%04x val=0x%08x",
+			isp_trace_cat(ISP_CAT_PIO, "RD off=0x%04x val=0x%08x",
 				(u32)(p - get_aperture(ndev)), *(values - 1));
 		p += 4;
 	}
@@ -156,7 +156,7 @@ int nvhost_write_module_regs(struct platform_device *ndev,
 	p += offset;
 	while (count--) {
 		if (is_isp)
-			isp_trace_log("PIO_WR off=0x%04x val=0x%08x",
+			isp_trace_cat(ISP_CAT_PIO, "WR off=0x%04x val=0x%08x",
 				(u32)(p - get_aperture(ndev)), *values);
 		writel(*(values++), p);
 		p += 4;
@@ -247,6 +247,19 @@ static int nvhost_channelopen(struct inode *inode, struct file *filp)
 	priv->timeout_debug_dump = true;
 	if (!tegra_platform_is_silicon())
 		priv->timeout = 0;
+
+	/* ISP channel open trace */
+	{
+		struct nvhost_device_data *__opdata =
+			platform_get_drvdata(ch->dev);
+		if (__opdata &&
+		    (__opdata->moduleid & 0xFFFF) == NVHOST_MODULE_ISP)
+			isp_trace_cat(ISP_CAT_CHANNEL,
+				"OPEN dev=%s clientid=%d timeout=%u",
+				dev_name(&ch->dev->dev),
+				priv->clientid, priv->timeout);
+	}
+
 	return 0;
 fail:
 	nvhost_channelrelease(inode, filp);
@@ -565,14 +578,18 @@ static int nvhost_ioctl_channel_submit(struct nvhost_channel_userctx *ctx,
 			platform_get_drvdata(ctx->ch->dev);
 		if (__pdata && (__pdata->moduleid & 0xFFFF) == NVHOST_MODULE_ISP) {
 			int __i;
-			isp_trace_log("SUBMIT dev=%s gathers=%d relocs=%d syncpts=%d",
+			isp_trace_cat(ISP_CAT_SUBMIT,
+				"SUBMIT dev=%s gathers=%d relocs=%d syncpts=%d",
 				ctx->ch->dev->name, job->num_gathers,
 				job->num_relocs, job->num_syncpts);
 			for (__i = 0; __i < job->num_syncpts; __i++)
-				isp_trace_log("  SP[%d] id=%u incrs=%u",
-					__i, job->sp[__i].id, job->sp[__i].incrs);
+				isp_trace_cat(ISP_CAT_SUBMIT,
+					"  SP[%d] id=%u incrs=%u",
+					__i, job->sp[__i].id,
+					job->sp[__i].incrs);
 			for (__i = 0; __i < job->num_relocs; __i++)
-				isp_trace_log("  RELOC[%d] cmdbuf=0x%x+0x%x -> target=0x%x+0x%x phys=0x%08x",
+				isp_trace_cat(ISP_CAT_SUBMIT,
+					"  RELOC[%d] cmdbuf=0x%x+0x%x -> target=0x%x+0x%x phys=0x%08x",
 					__i,
 					job->relocarray[__i].cmdbuf_mem,
 					job->relocarray[__i].cmdbuf_offset,
@@ -582,7 +599,8 @@ static int nvhost_ioctl_channel_submit(struct nvhost_channel_userctx *ctx,
 			for (__i = 0; __i < job->num_gathers; __i++) {
 				struct nvhost_job_gather *g = &job->gathers[__i];
 				void *mem;
-				isp_trace_log("  G[%d] class=0x%02x words=%d base=0x%08x off=%d",
+				isp_trace_cat(ISP_CAT_SUBMIT,
+					"  G[%d] class=0x%02x words=%d base=0x%08x off=%d",
 					__i, g->class_id, g->words,
 					(u32)g->mem_base, g->offset);
 				if (g->ref) {
@@ -590,7 +608,8 @@ static int nvhost_ioctl_channel_submit(struct nvhost_channel_userctx *ctx,
 					if (mem) {
 						u32 *buf = (u32 *)mem +
 							(g->offset / sizeof(u32));
-						isp_trace_hex("  GCMD", buf,
+						isp_trace_cat_hex(ISP_CAT_GATHER,
+							"GCMD", buf,
 							g->words);
 						nvhost_memmgr_munmap(g->ref, mem);
 					}
@@ -606,8 +625,32 @@ static int nvhost_ioctl_channel_submit(struct nvhost_channel_userctx *ctx,
 	job->timeout_debug_dump = ctx->timeout_debug_dump;
 
 	err = nvhost_channel_submit(job);
-	if (err)
+	if (err) {
+		/* ISP: log submit error */
+		struct nvhost_device_data *__pdata2 =
+			platform_get_drvdata(ctx->ch->dev);
+		if (__pdata2 &&
+		    (__pdata2->moduleid & 0xFFFF) == NVHOST_MODULE_ISP)
+			isp_trace_cat(ISP_CAT_SUBMIT,
+				"SUBMIT_ERR dev=%s err=%d",
+				ctx->ch->dev->name, err);
 		goto fail_submit;
+	}
+
+	/* ISP: log submit success with fence values */
+	{
+		struct nvhost_device_data *__pdata3 =
+			platform_get_drvdata(ctx->ch->dev);
+		if (__pdata3 &&
+		    (__pdata3->moduleid & 0xFFFF) == NVHOST_MODULE_ISP) {
+			int __i;
+			for (__i = 0; __i < job->num_syncpts; __i++)
+				isp_trace_cat(ISP_CAT_SUBMIT,
+					"  FENCE[%d] id=%u val=%u",
+					__i, job->sp[__i].id,
+					job->sp[__i].fence);
+		}
+	}
 
 	/* Deliver multiple fences back to the userspace */
 	if (fences)
@@ -926,7 +969,8 @@ static long nvhost_channelctl(struct file *filp,
 		struct nvhost_device_data *__pdata =
 			platform_get_drvdata(priv->ch->dev);
 		if (__pdata && (__pdata->moduleid & 0xFFFF) == NVHOST_MODULE_ISP)
-			isp_trace_log("IOCTL dev=%s cmd=0x%08x nr=%d dir=%d size=%d",
+			isp_trace_cat(ISP_CAT_CHANNEL_IOCTL,
+				"IOCTL dev=%s cmd=0x%08x nr=%d dir=%d size=%d",
 				dev_name(dev), cmd, _IOC_NR(cmd),
 				_IOC_DIR(cmd), _IOC_SIZE(cmd));
 	}
@@ -951,7 +995,8 @@ static long nvhost_channelctl(struct file *filp,
 			return -EINVAL;
 		arg->value = pdata->syncpts[arg->param];
 		if ((pdata->moduleid & 0xFFFF) == NVHOST_MODULE_ISP)
-			isp_trace_log("GET_SYNCPT param=%u -> id=%u",
+			isp_trace_cat(ISP_CAT_CHANNEL_IOCTL,
+				"GET_SYNCPT param=%u -> id=%u",
 				arg->param, arg->value);
 		break;
 	}
@@ -1005,7 +1050,8 @@ static long nvhost_channelctl(struct file *filp,
 			platform_get_drvdata(priv->ch->dev);
 
 		if ((pdata->moduleid & 0xFFFF) == NVHOST_MODULE_ISP)
-			isp_trace_log("SET_NVMAP_FD fd=%d", fd);
+			isp_trace_cat(ISP_CAT_CHANNEL_IOCTL,
+				"SET_NVMAP_FD fd=%d", fd);
 
 		if (IS_ERR(new_client)) {
 			err = PTR_ERR(new_client);
@@ -1068,7 +1114,8 @@ static long nvhost_channelctl(struct file *filp,
 				platform_get_drvdata(priv->ch->dev);
 
 		if ((pdata->moduleid & 0xFFFF) == NVHOST_MODULE_ISP)
-			isp_trace_log("SET_CLK_RATE moduleid=0x%x rate=%lu",
+			isp_trace_cat(ISP_CAT_CHANNEL_IOCTL,
+				"SET_CLK_RATE moduleid=0x%x rate=%lu",
 				arg->moduleid, (unsigned long)arg->rate);
 
 		err = nvhost_ioctl_channel_set_rate(priv, arg);

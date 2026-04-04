@@ -44,6 +44,8 @@
 #include "debug.h"
 #include "bus_client.h"
 #include "nvhost_acm.h"
+
+#include "../isp/isp_trace.h"
 #include "nvhost_channel.h"
 #include "nvhost_job.h"
 #include "nvhost_memmgr.h"
@@ -129,6 +131,8 @@ static int nvhost_ioctl_ctrl_syncpt_read(struct nvhost_ctrl_userctx *ctx,
 		return -EINVAL;
 	args->value = nvhost_syncpt_read(&ctx->dev->syncpt, args->id);
 	trace_nvhost_ioctl_ctrl_syncpt_read(args->id, args->value);
+	isp_trace_cat(ISP_CAT_SYNCPT, "READ id=%u val=%u",
+		      args->id, args->value);
 	return 0;
 }
 
@@ -157,11 +161,17 @@ static int nvhost_ioctl_ctrl_syncpt_waitex(struct nvhost_ctrl_userctx *ctx,
 	else
 		timeout = (u32)msecs_to_jiffies(args->timeout);
 
+	isp_trace_cat(ISP_CAT_SYNCPT, "WAIT id=%u thresh=%u timeout=%u",
+		      args->id, args->thresh, args->timeout);
+
 	err = nvhost_syncpt_wait_timeout(&ctx->dev->syncpt, args->id,
 					args->thresh, timeout, &args->value,
 					NULL, true);
 	trace_nvhost_ioctl_ctrl_syncpt_wait(args->id, args->thresh,
 	  args->timeout, args->value, err);
+
+	isp_trace_cat(ISP_CAT_SYNCPT, "WAIT_DONE id=%u thresh=%u val=%u err=%d",
+		      args->id, args->thresh, args->value, err);
 
 	return err;
 }
@@ -179,6 +189,9 @@ static int nvhost_ioctl_ctrl_syncpt_waitmex(struct nvhost_ctrl_userctx *ctx,
 	else
 		timeout = (u32)msecs_to_jiffies(args->timeout);
 
+	isp_trace_cat(ISP_CAT_SYNCPT, "WAITMEX id=%u thresh=%u timeout=%u",
+		      args->id, args->thresh, args->timeout);
+
 	err = nvhost_syncpt_wait_timeout(&ctx->dev->syncpt, args->id,
 					args->thresh, timeout, &args->value,
 					&ts, true);
@@ -186,6 +199,10 @@ static int nvhost_ioctl_ctrl_syncpt_waitmex(struct nvhost_ctrl_userctx *ctx,
 	args->tv_nsec = ts.tv_nsec;
 	trace_nvhost_ioctl_ctrl_syncpt_wait(args->id, args->thresh,
 					    args->timeout, args->value, err);
+
+	isp_trace_cat(ISP_CAT_SYNCPT,
+		      "WAITMEX_DONE id=%u thresh=%u val=%u err=%d",
+		      args->id, args->thresh, args->value, err);
 
 	return err;
 }

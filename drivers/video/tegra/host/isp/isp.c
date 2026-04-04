@@ -220,7 +220,7 @@ static irqreturn_t isp_isr(int irq, void *dev_id)
 
 	reg = tegra_isp_read(dev, 0xf8);
 
-	isp_trace_log("ISR dev_id=%d status=0x%08x", dev->dev_id, reg);
+	isp_trace_cat(ISP_CAT_ISR, "ISR dev_id=%d status=0x%08x", dev->dev_id, reg);
 
 	if (reg & (1 << 5)) {
 		/* Disable */
@@ -459,7 +459,8 @@ long isp_ioctl(struct file *file,
 
 		isp_bw = (((emc_info.isp_clk/1000) * emc_info.bpp_output) >> 3);
 
-		isp_trace_log("SET_EMC dev_id=%d clk=%u bpp_in=%u bpp_out=%u bw=%u la=%s",
+		isp_trace_cat(ISP_CAT_POWER,
+			"SET_EMC dev_id=%d clk=%u bpp_in=%u bpp_out=%u bw=%u la=%s",
 			tegra_isp->dev_id, emc_info.isp_clk,
 			emc_info.bpp_input, emc_info.bpp_output, isp_bw,
 			la_client == ISP_HARD_ISO_CLIENT ? "HARD" : "SOFT");

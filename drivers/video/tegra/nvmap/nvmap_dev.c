@@ -47,6 +47,8 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/nvmap.h>
 
+#include "../host/isp/isp_trace.h"
+
 #include "nvmap_priv.h"
 #include "nvmap_ioctl.h"
 
@@ -743,8 +745,25 @@ static long nvmap_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		break;
 	case NVMAP_IOC_CREATE:
 	case NVMAP_IOC_FROM_FD:
+	{
+		struct nvmap_create_handle pre;
+		if (!copy_from_user(&pre, uarg, sizeof(pre))) {
+			if (cmd == NVMAP_IOC_CREATE)
+				isp_trace_cat(ISP_CAT_NVMAP_CREATE,
+					"CREATE size=%u", pre.size);
+			else
+				isp_trace_cat(ISP_CAT_NVMAP_CREATE,
+					"FROM_FD fd=%d", pre.fd);
+		}
 		err = nvmap_ioctl_create(filp, cmd, uarg);
+		if (!err) {
+			struct nvmap_create_handle post;
+			if (!copy_from_user(&post, uarg, sizeof(post)))
+				isp_trace_cat(ISP_CAT_NVMAP_CREATE,
+					"  -> handle=0x%x", post.handle);
+		}
 		break;
+	}
 
 	case NVMAP_IOC_FROM_ID:
 	case NVMAP_IOC_GET_ID:
@@ -752,33 +771,93 @@ static long nvmap_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		return -ENOTTY;
 
 	case NVMAP_IOC_GET_FD:
+	{
+		struct nvmap_create_handle op;
 		err = nvmap_ioctl_getfd(filp, uarg);
+		if (!err && !copy_from_user(&op, uarg, sizeof(op)))
+			isp_trace_cat(ISP_CAT_NVMAP_OTHER,
+				"GET_FD handle=0x%x -> fd=%d",
+				op.handle, op.fd);
 		break;
+	}
 
 	case NVMAP_IOC_PARAM:
+	{
+		struct nvmap_handle_param op;
 		err = nvmap_ioctl_get_param(filp, uarg);
+		if (!err && !copy_from_user(&op, uarg, sizeof(op)))
+			isp_trace_cat(ISP_CAT_NVMAP_OTHER,
+				"PARAM handle=0x%x param=%u result=0x%lx",
+				op.handle, op.param, op.result);
 		break;
+	}
 
 	case NVMAP_IOC_UNPIN_MULT:
 	case NVMAP_IOC_PIN_MULT:
+	{
+		struct nvmap_pin_handle op;
+		if (!copy_from_user(&op, uarg, sizeof(op)))
+			isp_trace_cat(ISP_CAT_NVMAP_PIN,
+				"%s count=%u handles=%p",
+				cmd == NVMAP_IOC_PIN_MULT ? "PIN" : "UNPIN",
+				op.count, op.handles);
 		err = nvmap_ioctl_pinop(filp, cmd == NVMAP_IOC_PIN_MULT, uarg);
+		if (!err && cmd == NVMAP_IOC_PIN_MULT) {
+			if (!copy_from_user(&op, uarg, sizeof(op)) &&
+			    op.count == 1) {
+				unsigned long addr;
+				if (!get_user(addr,
+					      (unsigned long __user *)&op.addr))
+					isp_trace_cat(ISP_CAT_NVMAP_PIN,
+						"  -> iova=0x%lx", addr);
+			}
+		}
 		break;
+	}
 
 	case NVMAP_IOC_ALLOC:
+	{
+		struct nvmap_alloc_handle op;
+		if (!copy_from_user(&op, uarg, sizeof(op)))
+			isp_trace_cat(ISP_CAT_NVMAP_ALLOC,
+				"ALLOC handle=0x%x heap=0x%x flags=0x%x align=%u",
+				op.handle, op.heap_mask, op.flags, op.align);
 		err = nvmap_ioctl_alloc(filp, uarg);
+		if (err)
+			isp_trace_cat(ISP_CAT_NVMAP_ALLOC,
+				"  ALLOC_ERR handle=0x%x err=%d",
+				op.handle, err);
 		break;
+	}
 
 	case NVMAP_IOC_ALLOC_KIND:
+	{
+		struct nvmap_alloc_kind_handle op;
+		if (!copy_from_user(&op, uarg, sizeof(op)))
+			isp_trace_cat(ISP_CAT_NVMAP_ALLOC,
+				"ALLOC_KIND handle=0x%x heap=0x%x flags=0x%x align=%u kind=%u",
+				op.handle, op.heap_mask, op.flags, op.align,
+				op.kind);
 		err = nvmap_ioctl_alloc_kind(filp, uarg);
 		break;
+	}
 
 	case NVMAP_IOC_FREE:
+		isp_trace_cat(ISP_CAT_NVMAP_OTHER, "FREE arg=0x%lx", arg);
 		err = nvmap_ioctl_free(filp, arg);
 		break;
 
 	case NVMAP_IOC_MMAP:
+	{
+		struct nvmap_map_caller op;
+		if (!copy_from_user(&op, uarg, sizeof(op)))
+			isp_trace_cat(ISP_CAT_NVMAP_OTHER,
+				"MMAP handle=0x%x off=%u len=%u flags=0x%x addr=0x%x",
+				op.handle, op.offset, op.length, op.flags,
+				op.addr);
 		err = nvmap_map_into_caller_ptr(filp, uarg);
 		break;
+	}
 
 	case NVMAP_IOC_WRITE:
 	case NVMAP_IOC_READ:
@@ -786,12 +865,25 @@ static long nvmap_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		break;
 
 	case NVMAP_IOC_CACHE:
+	{
+		struct nvmap_cache_op op;
+		if (!copy_from_user(&op, uarg, sizeof(op)))
+			isp_trace_cat(ISP_CAT_NVMAP_CACHE,
+				"CACHE handle=0x%x addr=0x%x len=%u op=%d",
+				op.handle, op.addr, op.len, op.op);
 		err = nvmap_ioctl_cache_maint(filp, uarg);
 		break;
+	}
 
 	case NVMAP_IOC_CACHE_LIST:
+	{
+		struct nvmap_cache_op_list op;
+		if (!copy_from_user(&op, uarg, sizeof(op)))
+			isp_trace_cat(ISP_CAT_NVMAP_CACHE,
+				"CACHE_LIST nr=%u op=%d", op.nr, op.op);
 		err = nvmap_ioctl_cache_maint_list(filp, uarg);
 		break;
+	}
 
 	case NVMAP_IOC_SHARE:
 		err = nvmap_ioctl_share_dmabuf(filp, uarg);
