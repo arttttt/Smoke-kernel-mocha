@@ -43,6 +43,7 @@
 #include "dev.h"
 #include "bus_client.h"
 #include "isp/isp_trace.h"
+#include <linux/nvhost_ioctl.h>
 
 #define ACM_SUSPEND_WAIT_FOR_IDLE_TIMEOUT	(2 * HZ)
 #define POWERGATE_DELAY 			10
