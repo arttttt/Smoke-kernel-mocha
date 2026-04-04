@@ -226,11 +226,22 @@ int isp_trace_init(void)
 		goto init_header;
 	}
 
-	/* Cached mapping for fast direct access to reserved RAM */
+	/* Try cached first, fall back to uncached (like ramoops does) */
 	trace_base = ioremap_cached(trace_phys, trace_size);
 	if (!trace_base) {
-		pr_err("isp_trace: ioremap_cached failed for 0x%pa\n", &trace_phys);
-		return -ENOMEM;
+		pr_warn("isp_trace: ioremap_cached failed, trying ioremap\n");
+		trace_base = ioremap(trace_phys, trace_size);
+	}
+	if (!trace_base) {
+		pr_err("isp_trace: ioremap failed for 0x%pa, using vmalloc\n",
+		       &trace_phys);
+		trace_base = vzalloc(ISP_TRACE_BUF_SIZE);
+		if (!trace_base)
+			return -ENOMEM;
+		trace_is_phys = 0;
+		trace_hdr = (struct isp_trace_header *)trace_base;
+		trace_data = (char *)trace_base + sizeof(struct isp_trace_header);
+		goto init_header;
 	}
 	trace_is_phys = 1;
 
