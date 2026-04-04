@@ -137,52 +137,53 @@ void isp_trace_hex(const char *tag, const u32 *data, int words)
 }
 EXPORT_SYMBOL(isp_trace_hex);
 
-/* /proc/isp_trace — read ring buffer content in chunks */
-static int isp_trace_show(struct seq_file *s, void *v)
+/* /proc/isp_trace — direct read (no seq_file, handles large buffers) */
+static ssize_t isp_trace_read(struct file *file, char __user *buf,
+			      size_t count, loff_t *ppos)
 {
-	u32 pos, data_size, wrap_count, entry_count;
-	u32 start, total;
+	u32 pos, data_size, wrap_count;
+	u32 total, start;
+	ssize_t ret;
+	loff_t off = *ppos;
 
-	if (!trace_hdr || !trace_data) {
-		seq_printf(s, "ISP trace not initialized\n");
-		return 0;
-	}
+	if (!trace_hdr || !trace_data)
+		return -ENODEV;
 
 	pos = trace_hdr->write_pos;
 	data_size = trace_hdr->data_size;
 	wrap_count = trace_hdr->wrap_count;
-	entry_count = trace_hdr->entry_count;
 
-	seq_printf(s, "=== ISP TRACE: entries=%u wraps=%u pos=%u/%u ===\n",
-		   entry_count, wrap_count, pos, data_size);
+	total = wrap_count > 0 ? data_size : pos;
+	start = wrap_count > 0 ? pos : 0;
 
-	if (wrap_count > 0) {
-		/* Buffer wrapped — read from pos to end, then 0 to pos */
-		u32 tail = data_size - pos;
-		if (tail > 0)
-			seq_write(s, trace_data + pos, tail);
-		if (pos > 0)
-			seq_write(s, trace_data, pos);
-	} else {
-		/* No wrap — read from 0 to pos */
-		if (pos > 0)
-			seq_write(s, trace_data, pos);
+	if (off >= total)
+		return 0;
+	if (off + count > total)
+		count = total - off;
+
+	/* Map logical offset to ring buffer position */
+	{
+		u32 ring_pos = (start + (u32)off) % data_size;
+		u32 first_chunk = data_size - ring_pos;
+
+		if (count <= first_chunk) {
+			if (copy_to_user(buf, trace_data + ring_pos, count))
+				return -EFAULT;
+		} else {
+			if (copy_to_user(buf, trace_data + ring_pos, first_chunk))
+				return -EFAULT;
+			if (copy_to_user(buf + first_chunk, trace_data,
+					 count - first_chunk))
+				return -EFAULT;
+		}
 	}
 
-	return 0;
-}
-
-static int isp_trace_open(struct inode *inode, struct file *file)
-{
-	/* Use single_open_size with larger buffer for big traces */
-	return single_open_size(file, isp_trace_show, NULL, 64 * 1024);
+	*ppos = off + count;
+	return count;
 }
 
 static const struct file_operations isp_trace_fops = {
-	.open    = isp_trace_open,
-	.read    = seq_read,
-	.llseek  = seq_lseek,
-	.release = single_release,
+	.read    = isp_trace_read,
 };
 
 /* /proc/isp_trace_reset — write "1" to clear */
