@@ -2160,6 +2160,15 @@ static struct platform_device ramoops_dev  = {
 	},
 };
 
+/* ISP trace persistent buffer — 16MB before hardboot/ramoops region */
+static phys_addr_t isp_trace_phys_addr;
+static unsigned long isp_trace_phys_size;
+
+phys_addr_t tegra_isp_trace_get_phys(void) { return isp_trace_phys_addr; }
+unsigned long tegra_isp_trace_get_size(void) { return isp_trace_phys_size; }
+EXPORT_SYMBOL(tegra_isp_trace_get_phys);
+EXPORT_SYMBOL(tegra_isp_trace_get_size);
+
 void __init tegra_reserve_ramoops_memory(unsigned long reserve_size)
 {
 	ramoops_data.mem_size = reserve_size;
@@ -2171,6 +2180,16 @@ void __init tegra_reserve_ramoops_memory(unsigned long reserve_size)
 	if (memblock_reserve(ramoops_data.mem_address - SZ_1M, ramoops_data.mem_size + SZ_1M))
   		pr_err("Failed to remove carveout %08lx@%08llx from memory map\n",
   			reserve_size, (u64)ramoops_data.mem_address);
+
+	/* Reserve 16MB for ISP trace before hardboot region */
+	isp_trace_phys_size = SZ_16M;
+	isp_trace_phys_addr = ramoops_data.mem_address - SZ_1M - isp_trace_phys_size;
+	if (memblock_reserve(isp_trace_phys_addr, isp_trace_phys_size))
+		pr_err("Failed to reserve ISP trace %08lx@%08llx\n",
+			isp_trace_phys_size, (u64)isp_trace_phys_addr);
+	else
+		pr_info("ISP trace reserved at 0x%pa (%lu bytes)\n",
+			&isp_trace_phys_addr, isp_trace_phys_size);
 }
 
 static void __init tegra_register_ramoops_device()

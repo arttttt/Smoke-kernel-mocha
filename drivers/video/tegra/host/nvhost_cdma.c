@@ -26,6 +26,7 @@
 #include "debug.h"
 #include "nvhost_memmgr.h"
 #include "chip_support.h"
+#include "isp/isp_trace.h"
 #include <asm/cacheflush.h>
 
 #include <linux/slab.h>
@@ -482,9 +483,16 @@ static void _trace_write_gather(struct nvhost_cdma *cdma,
  */
 void nvhost_cdma_push(struct nvhost_cdma *cdma, u32 op1, u32 op2)
 {
+	struct nvhost_device_data *pdata =
+		platform_get_drvdata(cdma_to_channel(cdma)->dev);
+
 	if (nvhost_debug_trace_cmdbuf)
 		trace_nvhost_cdma_push(cdma_to_channel(cdma)->dev->name,
 				op1, op2);
+
+	/* ISP push buffer trace */
+	if (pdata && (pdata->moduleid & 0xFFFF) == NVHOST_MODULE_ISP)
+		isp_trace_log("PB %08x %08x", op1, op2);
 
 	nvhost_cdma_push_gather(cdma, NULL, NULL, 0, op1, op2);
 }
@@ -499,9 +507,28 @@ void nvhost_cdma_push_gather(struct nvhost_cdma *cdma,
 {
 	u32 slots_free = cdma->slots_free;
 	struct push_buffer *pb = &cdma->push_buffer;
+	struct nvhost_device_data *pdata =
+		platform_get_drvdata(cdma_to_channel(cdma)->dev);
 
 	if (handle)
 		trace_write_gather(cdma, handle, offset, op1 & 0x1fff);
+
+	/* ISP gather trace — dump content of gather buffer */
+	if (pdata && (pdata->moduleid & 0xFFFF) == NVHOST_MODULE_ISP) {
+		u32 words = op1 & 0x3fff;
+
+		isp_trace_log("PB_G %08x %08x off=%u words=%u", op1, op2, offset, words);
+
+		if (handle) {
+			void *mem = nvhost_memmgr_mmap(handle);
+			if (mem) {
+				u32 *buf = (u32 *)mem + (offset / sizeof(u32));
+				isp_trace_hex("GDATA", buf,
+					words < 512 ? words : 512);
+				nvhost_memmgr_munmap(handle, mem);
+			}
+		}
+	}
 
 	if (slots_free == 0) {
 		cdma_op().kick(cdma);

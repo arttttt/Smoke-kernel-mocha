@@ -38,6 +38,8 @@
 #include <linux/nvhost.h>
 #include <linux/nvhost_ioctl.h>
 
+#include "isp/isp_trace.h"
+
 #include <mach/gpufuse.h>
 
 #include "debug.h"
@@ -108,6 +110,8 @@ int nvhost_read_module_regs(struct platform_device *ndev,
 {
 	void __iomem *p = get_aperture(ndev);
 	int err;
+	struct nvhost_device_data *pdata = platform_get_drvdata(ndev);
+	int is_isp = pdata && ((pdata->moduleid & 0xFFFF) == NVHOST_MODULE_ISP);
 
 	if (!p)
 		return -ENODEV;
@@ -121,6 +125,9 @@ int nvhost_read_module_regs(struct platform_device *ndev,
 	p += offset;
 	while (count--) {
 		*(values++) = readl(p);
+		if (is_isp)
+			isp_trace_log("PIO_RD off=0x%04x val=0x%08x",
+				(u32)(p - get_aperture(ndev)), *(values - 1));
 		p += 4;
 	}
 	rmb();
@@ -134,6 +141,8 @@ int nvhost_write_module_regs(struct platform_device *ndev,
 {
 	int err;
 	void __iomem *p = get_aperture(ndev);
+	struct nvhost_device_data *pdata = platform_get_drvdata(ndev);
+	int is_isp = pdata && ((pdata->moduleid & 0xFFFF) == NVHOST_MODULE_ISP);
 
 	if (!p)
 		return -ENODEV;
@@ -146,6 +155,9 @@ int nvhost_write_module_regs(struct platform_device *ndev,
 	nvhost_module_busy(ndev);
 	p += offset;
 	while (count--) {
+		if (is_isp)
+			isp_trace_log("PIO_WR off=0x%04x val=0x%08x",
+				(u32)(p - get_aperture(ndev)), *values);
 		writel(*(values++), p);
 		p += 4;
 	}
@@ -547,6 +559,46 @@ static int nvhost_ioctl_channel_submit(struct nvhost_channel_userctx *ctx,
 	if (err)
 		goto fail;
 
+	/* ISP submit trace — dump full job after relocs are patched */
+	{
+		struct nvhost_device_data *__pdata =
+			platform_get_drvdata(ctx->ch->dev);
+		if (__pdata && (__pdata->moduleid & 0xFFFF) == NVHOST_MODULE_ISP) {
+			int __i;
+			isp_trace_log("SUBMIT dev=%s gathers=%d relocs=%d syncpts=%d",
+				ctx->ch->dev->name, job->num_gathers,
+				job->num_relocs, job->num_syncpts);
+			for (__i = 0; __i < job->num_syncpts; __i++)
+				isp_trace_log("  SP[%d] id=%u incrs=%u",
+					__i, job->sp[__i].id, job->sp[__i].incrs);
+			for (__i = 0; __i < job->num_relocs; __i++)
+				isp_trace_log("  RELOC[%d] cmdbuf=0x%x+0x%x -> target=0x%x+0x%x phys=0x%08x",
+					__i,
+					job->relocarray[__i].cmdbuf_mem,
+					job->relocarray[__i].cmdbuf_offset,
+					job->relocarray[__i].target,
+					job->relocarray[__i].target_offset,
+					(u32)job->reloc_addr_phys[__i]);
+			for (__i = 0; __i < job->num_gathers; __i++) {
+				struct nvhost_job_gather *g = &job->gathers[__i];
+				void *mem;
+				isp_trace_log("  G[%d] class=0x%02x words=%d base=0x%08x off=%d",
+					__i, g->class_id, g->words,
+					(u32)g->mem_base, g->offset);
+				if (g->ref) {
+					mem = nvhost_memmgr_mmap(g->ref);
+					if (mem) {
+						u32 *buf = (u32 *)mem +
+							(g->offset / sizeof(u32));
+						isp_trace_hex("  GCMD", buf,
+							min(g->words, (u32)512));
+						nvhost_memmgr_munmap(g->ref, mem);
+					}
+				}
+			}
+		}
+	}
+
 	if (args->timeout)
 		job->timeout = min(ctx->timeout, args->timeout);
 	else
@@ -869,6 +921,16 @@ static long nvhost_channelctl(struct file *filp,
 			return -EFAULT;
 	}
 
+	/* ISP ioctl tracing — log every ioctl for ISP devices */
+	{
+		struct nvhost_device_data *__pdata =
+			platform_get_drvdata(priv->ch->dev);
+		if (__pdata && (__pdata->moduleid & 0xFFFF) == NVHOST_MODULE_ISP)
+			isp_trace_log("IOCTL dev=%s cmd=0x%08x nr=%d dir=%d size=%d",
+				dev_name(dev), cmd, _IOC_NR(cmd),
+				_IOC_DIR(cmd), _IOC_SIZE(cmd));
+	}
+
 	switch (cmd) {
 	case NVHOST_IOCTL_CHANNEL_GET_SYNCPOINTS:
 	{
@@ -888,6 +950,9 @@ static long nvhost_channelctl(struct file *filp,
 				|| !pdata->syncpts[arg->param])
 			return -EINVAL;
 		arg->value = pdata->syncpts[arg->param];
+		if ((pdata->moduleid & 0xFFFF) == NVHOST_MODULE_ISP)
+			isp_trace_log("GET_SYNCPT param=%u -> id=%u",
+				arg->param, arg->value);
 		break;
 	}
 	case NVHOST_IOCTL_CHANNEL_GET_WAITBASES:
@@ -936,6 +1001,11 @@ static long nvhost_channelctl(struct file *filp,
 	{
 		int fd = (int)((struct nvhost_set_nvmap_fd_args *)buf)->fd;
 		struct mem_mgr *new_client = nvhost_memmgr_get_mgr_file(fd);
+		struct nvhost_device_data *pdata =
+			platform_get_drvdata(priv->ch->dev);
+
+		if ((pdata->moduleid & 0xFFFF) == NVHOST_MODULE_ISP)
+			isp_trace_log("SET_NVMAP_FD fd=%d", fd);
 
 		if (IS_ERR(new_client)) {
 			err = PTR_ERR(new_client);
@@ -994,6 +1064,12 @@ static long nvhost_channelctl(struct file *filp,
 	{
 		struct nvhost_clk_rate_args *arg =
 				(struct nvhost_clk_rate_args *)buf;
+		struct nvhost_device_data *pdata =
+				platform_get_drvdata(priv->ch->dev);
+
+		if ((pdata->moduleid & 0xFFFF) == NVHOST_MODULE_ISP)
+			isp_trace_log("SET_CLK_RATE moduleid=0x%x rate=%lu",
+				arg->moduleid, (unsigned long)arg->rate);
 
 		err = nvhost_ioctl_channel_set_rate(priv, arg);
 		break;

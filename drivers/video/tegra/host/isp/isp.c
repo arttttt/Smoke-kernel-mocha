@@ -42,6 +42,7 @@
 #include <linux/nvhost_isp_ioctl.h>
 #include <mach/latency_allowance.h>
 #include "isp.h"
+#include "isp_trace.h"
 
 #define T12_ISP_CG_CTRL		0x74
 #define T12_CG_2ND_LEVEL_EN	1
@@ -218,6 +219,8 @@ static irqreturn_t isp_isr(int irq, void *dev_id)
 	spin_lock_irqsave(&dev->lock, flags);
 
 	reg = tegra_isp_read(dev, 0xf8);
+
+	isp_trace_log("ISR dev_id=%d status=0x%08x", dev->dev_id, reg);
 
 	if (reg & (1 << 5)) {
 		/* Disable */
@@ -455,6 +458,11 @@ long isp_ioctl(struct file *file,
 			la_client = ISP_HARD_ISO_CLIENT;
 
 		isp_bw = (((emc_info.isp_clk/1000) * emc_info.bpp_output) >> 3);
+
+		isp_trace_log("SET_EMC dev_id=%d clk=%u bpp_in=%u bpp_out=%u bw=%u la=%s",
+			tegra_isp->dev_id, emc_info.isp_clk,
+			emc_info.bpp_input, emc_info.bpp_output, isp_bw,
+			la_client == ISP_HARD_ISO_CLIENT ? "HARD" : "SOFT");
 
 		/* Set latency allowance for given BW of ISP clients */
 		ret = isp_set_la(tegra_isp, isp_bw, la_client);

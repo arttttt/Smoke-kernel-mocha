@@ -42,6 +42,7 @@
 #include "nvhost_channel.h"
 #include "dev.h"
 #include "bus_client.h"
+#include "isp/isp_trace.h"
 
 #define ACM_SUSPEND_WAIT_FOR_IDLE_TIMEOUT	(2 * HZ)
 #define POWERGATE_DELAY 			10
@@ -147,6 +148,9 @@ void nvhost_module_busy(struct platform_device *dev)
 	struct nvhost_device_data *pdata = platform_get_drvdata(dev);
 	int ret = 0;
 
+	if ((pdata->moduleid & 0xFFFF) == NVHOST_MODULE_ISP)
+		isp_trace_log("MODULE_BUSY dev=%s", dev_name(&dev->dev));
+
 	/* Explicitly turn on the host1x clocks
 	 * - This is needed as host1x driver sets ignore_children = true
 	 * to cater the use case of display clock ON but host1x clock OFF
@@ -198,6 +202,9 @@ void nvhost_module_idle_mult(struct platform_device *dev, int refs)
 {
 	int original_refs = refs;
 	struct nvhost_device_data *pdata = platform_get_drvdata(dev);
+
+	if ((pdata->moduleid & 0xFFFF) == NVHOST_MODULE_ISP)
+		isp_trace_log("MODULE_IDLE dev=%s refs=%d", dev_name(&dev->dev), refs);
 
 #ifdef CONFIG_PM_RUNTIME
 	/* call idle callback only if the device is turned on. */
