@@ -222,6 +222,40 @@ static irqreturn_t isp_isr(int irq, void *dev_id)
 
 	isp_trace_cat(ISP_CAT_ISR, "ISR dev_id=%d status=0x%08x", dev->dev_id, reg);
 
+	/* Dump key ISP registers on every interrupt */
+	isp_trace_cat(ISP_CAT_REGDUMP,
+		"dev=%d ENABLE=0x%08x CTRL=0x%08x INTSTAT=0x%08x INTEN=0x%08x",
+		dev->dev_id,
+		tegra_isp_read(dev, 0x54),   /* 0x015*4 = ISP_ENABLE */
+		tegra_isp_read(dev, 0x30),   /* 0x00C*4 = ISP_CONTROL */
+		reg,                          /* 0xf8 = interrupt status */
+		tegra_isp_read(dev, 0x14c)); /* interrupt enable */
+	isp_trace_cat(ISP_CAT_REGDUMP,
+		"dev=%d OUT: W=0x%08x H=0x%08x FMT=0x%08x Y=0x%08x Us=0x%08x Vs=0x%08x",
+		dev->dev_id,
+		tegra_isp_read(dev, 0x3800),  /* 0xE00*4 = out width */
+		tegra_isp_read(dev, 0x3804),  /* 0xE01*4 = out height */
+		tegra_isp_read(dev, 0x3808),  /* 0xE02*4 = out format */
+		tegra_isp_read(dev, 0x3810),  /* 0xE04*4 = Y surf addr */
+		tegra_isp_read(dev, 0x381c),  /* 0xE07*4 = U surf addr */
+		tegra_isp_read(dev, 0x3828)); /* 0xE0A*4 = V surf addr */
+	isp_trace_cat(ISP_CAT_REGDUMP,
+		"dev=%d PROC: 0x%08x 0x%08x 0x%08x 0x%08x 0x%08x 0x%08x",
+		dev->dev_id,
+		tegra_isp_read(dev, 0x1400),  /* 0x500*4 */
+		tegra_isp_read(dev, 0x1404),  /* 0x501*4 */
+		tegra_isp_read(dev, 0x1408),  /* 0x502*4 */
+		tegra_isp_read(dev, 0x140c),  /* 0x503*4 */
+		tegra_isp_read(dev, 0x1410),  /* 0x504*4 */
+		tegra_isp_read(dev, 0x1414)); /* 0x505*4 */
+	isp_trace_cat(ISP_CAT_REGDUMP,
+		"dev=%d STATS=0x%08x IN_TRIG=0x%08x IN_DIM=0x%08x IN_FMT=0x%08x",
+		dev->dev_id,
+		tegra_isp_read(dev, 0x400),   /* 0x100*4 = stats buf */
+		tegra_isp_read(dev, 0x38c0),  /* 0xE30*4 = input trigger */
+		tegra_isp_read(dev, 0x38c4),  /* 0xE31*4 = input dims */
+		tegra_isp_read(dev, 0x38cc)); /* 0xE33*4 = input format */
+
 	if (reg & (1 << 5)) {
 		/* Disable */
 		enable_reg = tegra_isp_read(dev, 0x14c);

@@ -31,6 +31,8 @@ enum isp_trace_cat {
 	ISP_CAT_SYNCPT,			/* syncpoint read/wait/incr */
 	ISP_CAT_ISR,			/* ISP interrupt status */
 	ISP_CAT_POWER,			/* busy/idle/emc */
+	ISP_CAT_REGDUMP,		/* ISP MMIO register dumps */
+	ISP_CAT_SMMU,			/* SMMU IOVA→phys, domain info */
 	ISP_CAT_MAX
 };
 

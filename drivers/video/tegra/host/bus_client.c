@@ -649,6 +649,20 @@ static int nvhost_ioctl_channel_submit(struct nvhost_channel_userctx *ctx,
 					"  FENCE[%d] id=%u val=%u",
 					__i, job->sp[__i].id,
 					job->sp[__i].fence);
+
+			/* SMMU: log IOVA→phys for all reloc targets */
+			for (__i = 0; __i < job->num_relocs; __i++) {
+				dma_addr_t iova = job->reloc_addr_phys[__i];
+				isp_trace_cat(ISP_CAT_SMMU,
+					"  RELOC_IOVA[%d] iova=0x%08x",
+					__i, (u32)iova);
+			}
+			/* SMMU: log gather base addresses */
+			for (__i = 0; __i < job->num_gathers; __i++)
+				isp_trace_cat(ISP_CAT_SMMU,
+					"  GATHER_IOVA[%d] base=0x%08x words=%d",
+					__i, (u32)job->gathers[__i].mem_base,
+					job->gathers[__i].words);
 		}
 	}
 
