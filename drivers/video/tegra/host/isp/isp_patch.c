@@ -26,6 +26,7 @@
 #include "isp_trace.h"
 
 #define ISP_PATCH_MAX	64
+#define ISP_OVERRIDE_MAX_WORDS	4096  /* max override gather size */
 
 struct isp_patch_entry {
 	u16 method;
@@ -36,7 +37,16 @@ struct isp_patch_entry {
 static struct isp_patch_entry patches[ISP_PATCH_MAX];
 static DEFINE_SPINLOCK(patch_lock);
 static struct proc_dir_entry *proc_entry;
+static struct proc_dir_entry *proc_override;
 static int patch_enabled = 1;
+
+/* Gather override state */
+static u32 override_data[ISP_OVERRIDE_MAX_WORDS];
+static int override_words;		/* 0 = no override pending */
+static int override_submit_nr = -1;	/* which submit# to override (-1 = disabled) */
+static int override_gather_idx;		/* which gather in the submit (0 = G[0]) */
+static int current_submit_nr;		/* running counter of ISP submits */
+static DEFINE_SPINLOCK(override_lock);
 
 /* ----------------------------------------------------------------
  * Patch list management
@@ -300,12 +310,148 @@ int isp_patch_gather(u32 *buf, int words)
 }
 
 /* ----------------------------------------------------------------
+ * Gather override — replace entire gather contents
+ *
+ * Usage:
+ *   echo "submit=5 gather=0" > /proc/isp_patch_override  — target submit#5, G[0]
+ *   echo "data 00000c00 10150001 04040007 ..." > /proc/isp_patch_override — load hex words
+ *   echo "arm" > /proc/isp_patch_override  — arm for next matching submit
+ *   echo "off" > /proc/isp_patch_override  — disable override
+ *   cat /proc/isp_patch_override  — show status
+ * ---------------------------------------------------------------- */
+
+void isp_patch_submit_begin(void)
+{
+	current_submit_nr++;
+}
+
+int isp_patch_check_override(u32 *buf, int max_words, int gather_idx)
+{
+	unsigned long flags;
+	int words;
+
+	if (override_submit_nr < 0 || override_words == 0)
+		return 0;
+
+	if (current_submit_nr != override_submit_nr)
+		return 0;
+
+	if (gather_idx != override_gather_idx)
+		return 0;
+
+	spin_lock_irqsave(&override_lock, flags);
+	words = min(override_words, max_words);
+	memcpy(buf, override_data, words * 4);
+	isp_trace_cat(ISP_CAT_GATHER,
+		"OVERRIDE submit=%d gather=%d words=%d (replaced %d)",
+		current_submit_nr, gather_idx, words, max_words);
+	/* One-shot: disable after use */
+	override_submit_nr = -1;
+	spin_unlock_irqrestore(&override_lock, flags);
+	return words;
+}
+
+static int isp_override_show(struct seq_file *m, void *v)
+{
+	seq_printf(m, "submit_nr=%d (target=%d)\n",
+		   current_submit_nr, override_submit_nr);
+	seq_printf(m, "gather_idx=%d\n", override_gather_idx);
+	seq_printf(m, "words=%d\n", override_words);
+	seq_printf(m, "status=%s\n",
+		   override_submit_nr >= 0 ? "armed" : "off");
+	return 0;
+}
+
+static int isp_override_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, isp_override_show, NULL);
+}
+
+static ssize_t isp_override_write(struct file *file, const char __user *ubuf,
+				  size_t count, loff_t *ppos)
+{
+	char *buf;
+	unsigned int submit, gather;
+	int len;
+
+	buf = kmalloc(count + 1, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	if (copy_from_user(buf, ubuf, count)) {
+		kfree(buf);
+		return -EFAULT;
+	}
+	buf[count] = '\0';
+	len = count;
+	while (len > 0 && (buf[len - 1] == '\n' || buf[len - 1] == '\r'))
+		buf[--len] = '\0';
+
+	if (strcmp(buf, "off") == 0) {
+		override_submit_nr = -1;
+		override_words = 0;
+		pr_info("isp_patch: override disabled\n");
+	} else if (strcmp(buf, "arm") == 0) {
+		if (override_words > 0) {
+			override_submit_nr = current_submit_nr + 1;
+			pr_info("isp_patch: override armed for submit=%d gather=%d (%d words)\n",
+				override_submit_nr, override_gather_idx,
+				override_words);
+		} else {
+			pr_warn("isp_patch: no data loaded, can't arm\n");
+		}
+	} else if (strcmp(buf, "reset_counter") == 0) {
+		current_submit_nr = 0;
+		pr_info("isp_patch: submit counter reset\n");
+	} else if (sscanf(buf, "submit=%u gather=%u", &submit, &gather) == 2) {
+		override_submit_nr = submit;
+		override_gather_idx = gather;
+		pr_info("isp_patch: target submit=%u gather=%u\n",
+			submit, gather);
+	} else if (strncmp(buf, "data ", 5) == 0) {
+		/* Parse hex words: "data 00000c00 10150001 ..." */
+		char *p = buf + 5;
+		unsigned int word;
+		int n = 0;
+		unsigned long flags;
+
+		spin_lock_irqsave(&override_lock, flags);
+		while (n < ISP_OVERRIDE_MAX_WORDS && sscanf(p, "%x", &word) == 1) {
+			override_data[n++] = word;
+			/* Skip to next word */
+			while (*p && !isspace(*p)) p++;
+			while (*p && isspace(*p)) p++;
+		}
+		override_words = n;
+		spin_unlock_irqrestore(&override_lock, flags);
+		pr_info("isp_patch: loaded %d override words\n", n);
+	} else {
+		pr_warn("isp_patch: override bad input: '%s'\n", buf);
+	}
+
+	kfree(buf);
+	return count;
+}
+
+static const struct file_operations isp_override_fops = {
+	.owner = THIS_MODULE,
+	.open = isp_override_open,
+	.read = seq_read,
+	.write = isp_override_write,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+
+/* ----------------------------------------------------------------
  * Init / Cleanup
  * ---------------------------------------------------------------- */
 
 int isp_patch_init(void)
 {
 	memset(patches, 0, sizeof(patches));
+	override_words = 0;
+	override_submit_nr = -1;
+	current_submit_nr = 0;
 
 	proc_entry = proc_create("isp_patch", 0666, NULL, &isp_patch_fops);
 	if (!proc_entry) {
@@ -313,14 +459,22 @@ int isp_patch_init(void)
 		return -ENOMEM;
 	}
 
-	pr_info("isp_patch: ready (/proc/isp_patch)\n");
+	proc_override = proc_create("isp_patch_override", 0666, NULL,
+				    &isp_override_fops);
+	if (!proc_override)
+		pr_warn("isp_patch: failed to create /proc/isp_patch_override\n");
+
+	pr_info("isp_patch: ready (/proc/isp_patch, /proc/isp_patch_override)\n");
 	return 0;
 }
 
 void isp_patch_cleanup(void)
 {
+	if (proc_override)
+		remove_proc_entry("isp_patch_override", NULL);
 	if (proc_entry)
 		remove_proc_entry("isp_patch", NULL);
 	proc_entry = NULL;
+	proc_override = NULL;
 	pr_info("isp_patch: removed\n");
 }
