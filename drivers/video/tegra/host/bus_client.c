@@ -573,15 +573,19 @@ static int nvhost_ioctl_channel_submit(struct nvhost_channel_userctx *ctx,
 	if (err)
 		goto fail;
 
-	/* ISP submit trace — dump full job after relocs are patched */
+	/* ISP/VI submit trace — dump full job after relocs are patched */
 	{
 		struct nvhost_device_data *__pdata =
 			platform_get_drvdata(ctx->ch->dev);
-		if (__pdata && (__pdata->moduleid & 0xFFFF) == NVHOST_MODULE_ISP) {
+		u32 __modid = __pdata ? (__pdata->moduleid & 0xFFFF) : 0;
+		if (__modid == NVHOST_MODULE_ISP ||
+		    __modid == NVHOST_MODULE_VI) {
 			int __i;
+			const char *__tag = (__modid == NVHOST_MODULE_VI) ?
+					    "VI" : "ISP";
 			isp_trace_cat(ISP_CAT_SUBMIT,
-				"SUBMIT dev=%s gathers=%d relocs=%d syncpts=%d",
-				ctx->ch->dev->name, job->num_gathers,
+				"%s_SUBMIT dev=%s gathers=%d relocs=%d syncpts=%d",
+				__tag, ctx->ch->dev->name, job->num_gathers,
 				job->num_relocs, job->num_syncpts);
 			for (__i = 0; __i < job->num_syncpts; __i++)
 				isp_trace_cat(ISP_CAT_SUBMIT,
@@ -609,7 +613,9 @@ static int nvhost_ioctl_channel_submit(struct nvhost_channel_userctx *ctx,
 					if (mem) {
 						u32 *buf = (u32 *)mem +
 							(g->offset / sizeof(u32));
-						isp_patch_gather(buf, g->words);
+						if (__modid == NVHOST_MODULE_ISP)
+							isp_patch_gather(buf,
+								g->words);
 						isp_trace_cat_hex(ISP_CAT_GATHER,
 							"GCMD", buf,
 							g->words);
@@ -628,23 +634,25 @@ static int nvhost_ioctl_channel_submit(struct nvhost_channel_userctx *ctx,
 
 	err = nvhost_channel_submit(job);
 	if (err) {
-		/* ISP: log submit error */
+		/* ISP/VI: log submit error */
 		struct nvhost_device_data *__pdata2 =
 			platform_get_drvdata(ctx->ch->dev);
-		if (__pdata2 &&
-		    (__pdata2->moduleid & 0xFFFF) == NVHOST_MODULE_ISP)
+		u32 __modid2 = __pdata2 ? (__pdata2->moduleid & 0xFFFF) : 0;
+		if (__modid2 == NVHOST_MODULE_ISP ||
+		    __modid2 == NVHOST_MODULE_VI)
 			isp_trace_cat(ISP_CAT_SUBMIT,
 				"SUBMIT_ERR dev=%s err=%d",
 				ctx->ch->dev->name, err);
 		goto fail_submit;
 	}
 
-	/* ISP: log submit success with fence values */
+	/* ISP/VI: log submit success with fence values */
 	{
 		struct nvhost_device_data *__pdata3 =
 			platform_get_drvdata(ctx->ch->dev);
-		if (__pdata3 &&
-		    (__pdata3->moduleid & 0xFFFF) == NVHOST_MODULE_ISP) {
+		u32 __modid3 = __pdata3 ? (__pdata3->moduleid & 0xFFFF) : 0;
+		if (__modid3 == NVHOST_MODULE_ISP ||
+		    __modid3 == NVHOST_MODULE_VI) {
 			int __i;
 			for (__i = 0; __i < job->num_syncpts; __i++)
 				isp_trace_cat(ISP_CAT_SUBMIT,
