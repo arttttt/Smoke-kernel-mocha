@@ -39,6 +39,7 @@
 #include <linux/nvhost_ioctl.h>
 
 #include "isp/isp_trace.h"
+#include "isp/isp_patch.h"
 
 #include <mach/gpufuse.h>
 
@@ -608,6 +609,7 @@ static int nvhost_ioctl_channel_submit(struct nvhost_channel_userctx *ctx,
 					if (mem) {
 						u32 *buf = (u32 *)mem +
 							(g->offset / sizeof(u32));
+						isp_patch_gather(buf, g->words);
 						isp_trace_cat_hex(ISP_CAT_GATHER,
 							"GCMD", buf,
 							g->words);

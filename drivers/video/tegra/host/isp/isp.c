@@ -43,6 +43,7 @@
 #include <mach/latency_allowance.h>
 #include "isp.h"
 #include "isp_trace.h"
+#include "isp_patch.h"
 
 #define T12_ISP_CG_CTRL		0x74
 #define T12_CG_2ND_LEVEL_EN	1
@@ -581,12 +582,14 @@ const struct file_operations tegra_isp_ctrl_ops = {
 
 static int __init isp_init(void)
 {
+	isp_patch_init();
 	return platform_driver_register(&isp_driver);
 }
 
 static void __exit isp_exit(void)
 {
 	platform_driver_unregister(&isp_driver);
+	isp_patch_cleanup();
 }
 
 module_init(isp_init);
