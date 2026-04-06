@@ -33,6 +33,8 @@ enum isp_trace_cat {
 	ISP_CAT_POWER,			/* busy/idle/emc */
 	ISP_CAT_REGDUMP,		/* ISP MMIO register dumps */
 	ISP_CAT_SMMU,			/* SMMU IOVA→phys, domain info */
+	ISP_CAT_VI_SUBMIT,		/* VI submit meta + fence result */
+	ISP_CAT_VI_GATHER,		/* VI gather hex dumps */
 	ISP_CAT_MAX
 };
 

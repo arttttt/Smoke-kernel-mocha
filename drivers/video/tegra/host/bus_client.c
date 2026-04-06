@@ -581,19 +581,23 @@ static int nvhost_ioctl_channel_submit(struct nvhost_channel_userctx *ctx,
 		if (__modid == NVHOST_MODULE_ISP ||
 		    __modid == NVHOST_MODULE_VI) {
 			int __i;
-			const char *__tag = (__modid == NVHOST_MODULE_VI) ?
-					    "VI" : "ISP";
-			isp_trace_cat(ISP_CAT_SUBMIT,
+			int __is_vi = (__modid == NVHOST_MODULE_VI);
+			enum isp_trace_cat __cat_sub = __is_vi ?
+				ISP_CAT_VI_SUBMIT : ISP_CAT_SUBMIT;
+			enum isp_trace_cat __cat_gat = __is_vi ?
+				ISP_CAT_VI_GATHER : ISP_CAT_GATHER;
+			const char *__tag = __is_vi ? "VI" : "ISP";
+			isp_trace_cat(__cat_sub,
 				"%s_SUBMIT dev=%s gathers=%d relocs=%d syncpts=%d",
 				__tag, ctx->ch->dev->name, job->num_gathers,
 				job->num_relocs, job->num_syncpts);
 			for (__i = 0; __i < job->num_syncpts; __i++)
-				isp_trace_cat(ISP_CAT_SUBMIT,
+				isp_trace_cat(__cat_sub,
 					"  SP[%d] id=%u incrs=%u",
 					__i, job->sp[__i].id,
 					job->sp[__i].incrs);
 			for (__i = 0; __i < job->num_relocs; __i++)
-				isp_trace_cat(ISP_CAT_SUBMIT,
+				isp_trace_cat(__cat_sub,
 					"  RELOC[%d] cmdbuf=0x%x+0x%x -> target=0x%x+0x%x phys=0x%08x",
 					__i,
 					job->relocarray[__i].cmdbuf_mem,
@@ -604,7 +608,7 @@ static int nvhost_ioctl_channel_submit(struct nvhost_channel_userctx *ctx,
 			for (__i = 0; __i < job->num_gathers; __i++) {
 				struct nvhost_job_gather *g = &job->gathers[__i];
 				void *mem;
-				isp_trace_cat(ISP_CAT_SUBMIT,
+				isp_trace_cat(__cat_sub,
 					"  G[%d] class=0x%02x words=%d base=0x%08x off=%d",
 					__i, g->class_id, g->words,
 					(u32)g->mem_base, g->offset);
@@ -616,7 +620,7 @@ static int nvhost_ioctl_channel_submit(struct nvhost_channel_userctx *ctx,
 						if (__modid == NVHOST_MODULE_ISP)
 							isp_patch_gather(buf,
 								g->words);
-						isp_trace_cat_hex(ISP_CAT_GATHER,
+						isp_trace_cat_hex(__cat_gat,
 							"GCMD", buf,
 							g->words);
 						nvhost_memmgr_munmap(g->ref, mem);

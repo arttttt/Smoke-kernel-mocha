@@ -42,6 +42,8 @@ const char * const isp_trace_cat_prefix[ISP_CAT_MAX] = {
 	[ISP_CAT_POWER]		= "PW",
 	[ISP_CAT_REGDUMP]	= "RG",
 	[ISP_CAT_SMMU]		= "SM",
+	[ISP_CAT_VI_SUBMIT]	= "VS",
+	[ISP_CAT_VI_GATHER]	= "VG",
 };
 EXPORT_SYMBOL(isp_trace_cat_prefix);
 
@@ -62,6 +64,8 @@ const char * const isp_trace_cat_name[ISP_CAT_MAX] = {
 	[ISP_CAT_POWER]		= "power",
 	[ISP_CAT_REGDUMP]	= "regdump",
 	[ISP_CAT_SMMU]		= "smmu",
+	[ISP_CAT_VI_SUBMIT]	= "vi_submit",
+	[ISP_CAT_VI_GATHER]	= "vi_gather",
 };
 EXPORT_SYMBOL(isp_trace_cat_name);
 
