@@ -619,13 +619,12 @@ static int nvhost_ioctl_channel_submit(struct nvhost_channel_userctx *ctx,
 					if (mem) {
 						u32 *buf = (u32 *)mem +
 							(g->offset / sizeof(u32));
-						if (!__is_vi) {
+						if (!__is_vi)
 							isp_patch_check_override(
 								buf, g->words,
 								__i);
-							isp_patch_gather(buf,
+						isp_patch_gather(buf,
 								g->words);
-						}
 						isp_trace_cat_hex(__cat_gat,
 							"GCMD", buf,
 							g->words);
