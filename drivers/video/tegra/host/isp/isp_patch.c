@@ -171,17 +171,7 @@ static ssize_t isp_patch_write(struct file *file, const char __user *ubuf,
 		return count;
 	}
 
-	/* "0xNNN=del" — remove patch */
-	if (sscanf(buf, "0x%x=del", &method) == 1 ||
-	    sscanf(buf, "%x=del", &method) == 1) {
-		if (patch_del(method & 0xFFF) == 0)
-			pr_info("isp_patch: removed 0x%03x\n", method & 0xFFF);
-		else
-			pr_warn("isp_patch: 0x%03x not found\n", method & 0xFFF);
-		return count;
-	}
-
-	/* "0xNNN=0xVVVVVVVV" — add/update patch */
+	/* "0xNNN=0xVVVVVVVV" — add/update patch (check BEFORE =del!) */
 	if (sscanf(buf, "0x%x=0x%x", &method, &value) == 2 ||
 	    sscanf(buf, "%x=%x", &method, &value) == 2) {
 		if (patch_add(method & 0xFFF, value) == 0)
@@ -189,6 +179,16 @@ static ssize_t isp_patch_write(struct file *file, const char __user *ubuf,
 				method & 0xFFF, value);
 		else
 			pr_err("isp_patch: no free slots\n");
+		return count;
+	}
+
+	/* "0xNNN=del" — remove patch */
+	if (sscanf(buf, "0x%x=del", &method) == 1 ||
+	    sscanf(buf, "%x=del", &method) == 1) {
+		if (patch_del(method & 0xFFF) == 0)
+			pr_info("isp_patch: removed 0x%03x\n", method & 0xFFF);
+		else
+			pr_warn("isp_patch: 0x%03x not found\n", method & 0xFFF);
 		return count;
 	}
 
