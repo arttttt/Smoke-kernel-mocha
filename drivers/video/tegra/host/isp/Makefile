@@ -8,3 +8,4 @@ nvhost-isp-objs  = \
 obj-$(CONFIG_TEGRA_GRHOST) += nvhost-isp.o
 obj-$(CONFIG_TEGRA_GRHOST) += isp_trace.o
 obj-$(CONFIG_TEGRA_GRHOST) += isp_patch.o
+obj-$(CONFIG_TEGRA_GRHOST) += isp_tpg.o
