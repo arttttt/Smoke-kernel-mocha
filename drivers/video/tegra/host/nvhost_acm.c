@@ -149,7 +149,8 @@ void nvhost_module_busy(struct platform_device *dev)
 	struct nvhost_device_data *pdata = platform_get_drvdata(dev);
 	int ret = 0;
 
-	if ((pdata->moduleid & 0xFFFF) == NVHOST_MODULE_ISP)
+	if (isp_trace_enabled &&
+	    (pdata->moduleid & 0xFFFF) == NVHOST_MODULE_ISP)
 		isp_trace_cat(ISP_CAT_POWER, "BUSY dev=%s",
 			      dev_name(&dev->dev));
 
@@ -205,7 +206,8 @@ void nvhost_module_idle_mult(struct platform_device *dev, int refs)
 	int original_refs = refs;
 	struct nvhost_device_data *pdata = platform_get_drvdata(dev);
 
-	if ((pdata->moduleid & 0xFFFF) == NVHOST_MODULE_ISP)
+	if (isp_trace_enabled &&
+	    (pdata->moduleid & 0xFFFF) == NVHOST_MODULE_ISP)
 		isp_trace_cat(ISP_CAT_POWER, "IDLE dev=%s refs=%d",
 			      dev_name(&dev->dev), refs);
 

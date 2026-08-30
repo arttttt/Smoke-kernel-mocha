@@ -132,6 +132,16 @@ void isp_trace_cat(enum isp_trace_cat cat, const char *fmt, ...)
 	s64 ts;
 	const char *prefix;
 
+	/*
+	 * Cheapest possible gate, checked before any formatting.  Sites that
+	 * only call in here need no guard of their own -- and must not grow
+	 * one that swallows real work: in nvmap_dev.c several of these calls
+	 * sit in the same block as the ioctl dispatch they trace, so a guard
+	 * placed around the block would stop the allocation itself.
+	 */
+	if (!isp_trace_enabled)
+		return;
+
 	if (!trace_data || cat >= ISP_CAT_MAX)
 		return;
 
@@ -164,6 +174,10 @@ void isp_trace_cat_hex(enum isp_trace_cat cat, const char *tag,
 	unsigned long flags;
 	s64 ts;
 	const char *prefix;
+
+	/* same gate as isp_trace_cat(): hex dumps are the heavier of the two */
+	if (!isp_trace_enabled)
+		return;
 
 	if (!trace_data || !data || cat >= ISP_CAT_MAX)
 		return;
