@@ -15,6 +15,13 @@
 #define ISP_TRACE_BUF_SIZE	(64 * 1024 * 1024)	/* 64MB */
 #define ISP_TRACE_MAGIC		0x49535055		/* 'ISPU' v2 */
 
+/*
+ * Master switch for the submit-path instrumentation, default OFF.
+ * Gate the whole instrumented block on it -- buffer mapping included --
+ * not just the record-emitting calls.  See isp_trace.c for why.
+ */
+extern int isp_trace_enabled;
+
 /* Trace categories — stored as prefix in each line */
 enum isp_trace_cat {
 	ISP_CAT_NVMAP_CREATE = 0,	/* nvmap CREATE/FROM_FD */

@@ -348,6 +348,67 @@ static const struct file_operations isp_trace_reset_fops = {
 	.write = isp_trace_reset_write,
 };
 
+/*
+ * Master switch, default OFF.
+ *
+ * The submit-path instrumentation is not free: for every gather of every
+ * ISP/VI submit it maps the command buffer into kernel space, walks it and
+ * unmaps it again -- inside the submit path.  Left always-on that is enough
+ * to make the stock camera miss its syncpoint deadlines (ispa_memory and
+ * vi0_flash stuck, cdma_timeout on ispa_stream).  An instrument that breaks
+ * what it measures is worse than no instrument, so tracing is opt-in:
+ *
+ *   echo 1 > /proc/isp_trace/enable    -- arm it for the run of interest
+ *   echo 0 > /proc/isp_trace/enable    -- back to a stock-speed submit path
+ *
+ * Callers must gate the WHOLE block on this, mapping included -- gating only
+ * the record-emitting calls would leave the expensive part in place.
+ */
+int isp_trace_enabled;
+EXPORT_SYMBOL(isp_trace_enabled);
+
+static int isp_trace_enable_show(struct seq_file *m, void *v)
+{
+	seq_printf(m, "%d\n", isp_trace_enabled);
+	return 0;
+}
+
+static int isp_trace_enable_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, isp_trace_enable_show, NULL);
+}
+
+static ssize_t isp_trace_enable_write(struct file *file,
+				      const char __user *buf,
+				      size_t count, loff_t *ppos)
+{
+	char kbuf[8];
+	size_t n = min(count, sizeof(kbuf) - 1);
+
+	if (copy_from_user(kbuf, buf, n))
+		return -EFAULT;
+	kbuf[n] = 0;
+
+	if (kbuf[0] == '1')
+		isp_trace_enabled = 1;
+	else if (kbuf[0] == '0')
+		isp_trace_enabled = 0;
+	else
+		return -EINVAL;
+
+	pr_info("isp_trace: %s\n",
+		isp_trace_enabled ? "enabled" : "disabled");
+	return count;
+}
+
+static const struct file_operations isp_trace_enable_fops = {
+	.open = isp_trace_enable_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+	.write = isp_trace_enable_write,
+};
+
 /* Filter data — allocated per category */
 static struct isp_trace_filter filter_all = { .cat = -1 };
 static struct isp_trace_filter filters[ISP_CAT_MAX];
@@ -420,6 +481,8 @@ create_proc:
 
 	proc_reset = proc_create("reset", 0200, proc_dir,
 				 &isp_trace_reset_fops);
+
+	proc_create("enable", 0666, proc_dir, &isp_trace_enable_fops);
 
 	isp_trace_cat(ISP_CAT_POWER, "=== ISP TRACE v2 STARTED ===");
 	pr_info("isp_trace: ready, %d categories, phys=0x%pa\n",

@@ -491,7 +491,8 @@ void nvhost_cdma_push(struct nvhost_cdma *cdma, u32 op1, u32 op2)
 				op1, op2);
 
 	/* ISP push buffer trace */
-	if (pdata && (pdata->moduleid & 0xFFFF) == NVHOST_MODULE_ISP)
+	if (isp_trace_enabled &&
+	    pdata && (pdata->moduleid & 0xFFFF) == NVHOST_MODULE_ISP)
 		isp_trace_cat(ISP_CAT_CDMA, "PB %08x %08x", op1, op2);
 
 	nvhost_cdma_push_gather(cdma, NULL, NULL, 0, op1, op2);
@@ -513,8 +514,14 @@ void nvhost_cdma_push_gather(struct nvhost_cdma *cdma,
 	if (handle)
 		trace_write_gather(cdma, handle, offset, op1 & 0x1fff);
 
-	/* ISP gather trace — dump content of gather buffer */
-	if (pdata && (pdata->moduleid & 0xFFFF) == NVHOST_MODULE_ISP) {
+	/*
+	 * ISP gather trace -- dump content of gather buffer.
+	 * Gated as a whole: the mmap/munmap below runs per pushed gather and
+	 * is the expensive half, so leaving it outside the switch would keep
+	 * the cost that breaks the stock pipeline's deadlines.
+	 */
+	if (isp_trace_enabled &&
+	    pdata && (pdata->moduleid & 0xFFFF) == NVHOST_MODULE_ISP) {
 		u32 words = op1 & 0x3fff;
 
 		isp_trace_cat(ISP_CAT_CDMA, "PB_G %08x %08x off=%u words=%u",

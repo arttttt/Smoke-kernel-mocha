@@ -126,7 +126,7 @@ int nvhost_read_module_regs(struct platform_device *ndev,
 	p += offset;
 	while (count--) {
 		*(values++) = readl(p);
-		if (is_isp)
+		if (is_isp && isp_trace_enabled)
 			isp_trace_cat(ISP_CAT_PIO, "RD off=0x%04x val=0x%08x",
 				(u32)(p - get_aperture(ndev)), *(values - 1));
 		p += 4;
@@ -156,7 +156,7 @@ int nvhost_write_module_regs(struct platform_device *ndev,
 	nvhost_module_busy(ndev);
 	p += offset;
 	while (count--) {
-		if (is_isp)
+		if (is_isp && isp_trace_enabled)
 			isp_trace_cat(ISP_CAT_PIO, "WR off=0x%04x val=0x%08x",
 				(u32)(p - get_aperture(ndev)), *values);
 		writel(*(values++), p);
@@ -578,8 +578,9 @@ static int nvhost_ioctl_channel_submit(struct nvhost_channel_userctx *ctx,
 		struct nvhost_device_data *__pdata =
 			platform_get_drvdata(ctx->ch->dev);
 		u32 __modid = __pdata ? (__pdata->moduleid & 0xFFFF) : 0;
-		if (__modid == NVHOST_MODULE_ISP ||
-		    __modid == NVHOST_MODULE_VI) {
+		if (isp_trace_enabled &&
+		    (__modid == NVHOST_MODULE_ISP ||
+		     __modid == NVHOST_MODULE_VI)) {
 			int __i;
 			int __is_vi = (__modid == NVHOST_MODULE_VI);
 			enum isp_trace_cat __cat_sub = __is_vi ?
