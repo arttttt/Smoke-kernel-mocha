@@ -14,6 +14,7 @@
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/proc_fs.h>
+#include <linux/seq_file.h>
 #include <linux/io.h>
 #include <linux/vmalloc.h>
 #include <linux/spinlock.h>
