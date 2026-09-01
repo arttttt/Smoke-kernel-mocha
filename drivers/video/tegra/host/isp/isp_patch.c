@@ -32,6 +32,7 @@ struct isp_patch_entry {
 	u16 method;
 	u32 value;
 	bool active;
+	u32 hits;	/* how many times it has actually been applied */
 };
 
 static struct isp_patch_entry patches[ISP_PATCH_MAX];
@@ -51,6 +52,21 @@ static DEFINE_SPINLOCK(override_lock);
 /* ----------------------------------------------------------------
  * Patch list management
  * ---------------------------------------------------------------- */
+
+bool isp_patch_active(void)
+{
+	int i;
+
+	if (!patch_enabled)
+		return false;
+	if (override_words > 0 && override_submit_nr >= 0)
+		return true;
+	for (i = 0; i < ISP_PATCH_MAX; i++)
+		if (patches[i].active)
+			return true;
+	return false;
+}
+EXPORT_SYMBOL(isp_patch_active);
 
 static int patch_find(u16 method)
 {
@@ -82,6 +98,7 @@ static int patch_add(u16 method, u32 value)
 		if (!patches[i].active) {
 			patches[i].method = method;
 			patches[i].value = value;
+			patches[i].hits = 0;
 			patches[i].active = true;
 			spin_unlock_irqrestore(&patch_lock, flags);
 			return 0;
@@ -126,8 +143,13 @@ static int isp_patch_show(struct seq_file *m, void *v)
 	spin_lock_irqsave(&patch_lock, flags);
 	for (i = 0; i < ISP_PATCH_MAX; i++) {
 		if (patches[i].active) {
-			seq_printf(m, "0x%03x=0x%08x\n",
-				   patches[i].method, patches[i].value);
+			/* The hit count is the point: a patch that never
+			 * fires looks exactly like one that does, and that
+			 * silence cost an afternoon. */
+			seq_printf(m, "0x%03x=0x%08x  applied %u time%s\n",
+				   patches[i].method, patches[i].value,
+				   patches[i].hits,
+				   patches[i].hits == 1 ? "" : "s");
 			count++;
 		}
 	}
@@ -256,6 +278,7 @@ int isp_patch_gather(u32 *buf, int words)
 						method + i, buf[pos],
 						patches[idx].value);
 					buf[pos] = patches[idx].value;
+					patches[idx].hits++;
 					applied++;
 				}
 			}
@@ -273,6 +296,7 @@ int isp_patch_gather(u32 *buf, int words)
 						method, i, buf[pos],
 						patches[idx].value);
 					buf[pos] = patches[idx].value;
+					patches[idx].hits++;
 					applied++;
 				}
 			}

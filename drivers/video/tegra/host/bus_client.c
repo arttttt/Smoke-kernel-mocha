@@ -578,7 +578,12 @@ static int nvhost_ioctl_channel_submit(struct nvhost_channel_userctx *ctx,
 		struct nvhost_device_data *__pdata =
 			platform_get_drvdata(ctx->ch->dev);
 		u32 __modid = __pdata ? (__pdata->moduleid & 0xFFFF) : 0;
-		if (isp_trace_enabled &&
+		/* Patching must not depend on tracing. They were one block,
+		 * so arming a patch with the trace switched off did nothing
+		 * at all and said nothing about it -- an afternoon went into
+		 * that. The trace writers check the flag themselves, so with
+		 * the trace off they simply do nothing here. */
+		if ((isp_trace_enabled || isp_patch_active()) &&
 		    (__modid == NVHOST_MODULE_ISP ||
 		     __modid == NVHOST_MODULE_VI)) {
 			int __i;

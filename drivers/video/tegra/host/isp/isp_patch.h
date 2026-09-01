@@ -35,4 +35,12 @@ int isp_patch_check_override(u32 *buf, int max_words, int gather_idx);
 /* Count ISP submits (called from bus_client for each ISP submit) */
 void isp_patch_submit_begin(void);
 
+/*
+ * Whether anything is armed -- a patch or a pending gather override.
+ * The submit path uses this so that patching works with tracing off:
+ * the two used to share one condition, and arming a patch without the
+ * trace then did nothing and reported nothing.
+ */
+bool isp_patch_active(void);
+
 #endif /* __ISP_PATCH_H__ */
