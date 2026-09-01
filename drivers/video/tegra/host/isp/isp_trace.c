@@ -92,6 +92,23 @@ void isp_trace_set_phys(phys_addr_t phys, unsigned long size)
 }
 EXPORT_SYMBOL(isp_trace_set_phys);
 
+/*
+ * Keeping the beginning instead of the end.
+ *
+ * A ring keeps whatever happened most recently, and for this hardware that
+ * is the wrong half. The camera stack writes its entire configuration once,
+ * when it opens the device, and then submits a gather per frame for as long
+ * as the camera is open. By the time anyone reads the buffer the opening
+ * sequence has been overwritten many times over -- and it is the only part
+ * that says how the pipeline was set up, which is exactly what we have
+ * spent weeks unable to see.
+ *
+ * So: when armed, the trace records until the buffer is full and then stops,
+ * rather than wrapping over its own start.
+ */
+static int trace_stop_when_full;
+static int trace_is_full;
+
 /* Write raw bytes into ring buffer — caller must hold trace_lock */
 static void trace_write_raw(const char *buf, int len)
 {
@@ -99,9 +116,18 @@ static void trace_write_raw(const char *buf, int len)
 
 	if (!trace_data || !trace_hdr)
 		return;
+	if (trace_is_full)
+		return;
 
 	data_size = trace_hdr->data_size;
 	pos = trace_hdr->write_pos;
+
+	if (trace_stop_when_full && pos + len > data_size) {
+		trace_is_full = 1;
+		pr_info("isp_trace: buffer full, recording stopped (%u entries)\n",
+			trace_hdr->entry_count);
+		return;
+	}
 
 	space = data_size - pos;
 	if (len <= space) {
@@ -353,6 +379,7 @@ static ssize_t isp_trace_reset_write(struct file *file,
 	trace_hdr->data_size = ISP_TRACE_DATA_SIZE;
 	trace_hdr->entry_count = 0;
 	memset(trace_data, 0, ISP_TRACE_DATA_SIZE);
+	trace_is_full = 0;
 	spin_unlock_irqrestore(&trace_lock, flags);
 
 	pr_info("isp_trace: buffer reset\n");
@@ -361,6 +388,74 @@ static ssize_t isp_trace_reset_write(struct file *file,
 
 static const struct file_operations isp_trace_reset_fops = {
 	.write = isp_trace_reset_write,
+};
+
+/*
+ * /proc/isp_trace/once — record from here until the buffer is full, then
+ * stop.
+ *
+ * Write 1 to arm it: the buffer is cleared, tracing is switched on, and
+ * recording stops of its own accord when the sixty-four megabytes are used
+ * up. Open the camera after arming and the opening sequence is kept
+ * whatever happens afterwards. Write 0 to go back to an ordinary ring.
+ */
+static int isp_trace_once_show(struct seq_file *m, void *v)
+{
+	seq_printf(m, "%s\n", !trace_stop_when_full ? "off"
+			      : trace_is_full ? "full" : "armed");
+	return 0;
+}
+
+static int isp_trace_once_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, isp_trace_once_show, NULL);
+}
+
+static ssize_t isp_trace_once_write(struct file *file,
+				    const char __user *buf,
+				    size_t count, loff_t *ppos)
+{
+	unsigned long flags;
+	char kbuf[8];
+	size_t n = min(count, sizeof(kbuf) - 1);
+
+	if (!trace_hdr)
+		return -ENODEV;
+	if (copy_from_user(kbuf, buf, n))
+		return -EFAULT;
+	kbuf[n] = 0;
+
+	if (kbuf[0] == '1') {
+		spin_lock_irqsave(&trace_lock, flags);
+		trace_hdr->magic = ISP_TRACE_MAGIC;
+		trace_hdr->write_pos = 0;
+		trace_hdr->wrap_count = 0;
+		trace_hdr->data_size = ISP_TRACE_DATA_SIZE;
+		trace_hdr->entry_count = 0;
+		memset(trace_data, 0, ISP_TRACE_DATA_SIZE);
+		trace_stop_when_full = 1;
+		trace_is_full = 0;
+		spin_unlock_irqrestore(&trace_lock, flags);
+		isp_trace_enabled = 1;
+		pr_info("isp_trace: armed, keeping the first %lu bytes\n",
+			(unsigned long)ISP_TRACE_DATA_SIZE);
+	} else if (kbuf[0] == '0') {
+		trace_stop_when_full = 0;
+		trace_is_full = 0;
+		pr_info("isp_trace: back to an ordinary ring\n");
+	} else {
+		return -EINVAL;
+	}
+
+	return count;
+}
+
+static const struct file_operations isp_trace_once_fops = {
+	.open = isp_trace_once_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+	.write = isp_trace_once_write,
 };
 
 /*
@@ -498,6 +593,7 @@ create_proc:
 				 &isp_trace_reset_fops);
 
 	proc_create("enable", 0666, proc_dir, &isp_trace_enable_fops);
+	proc_create("once", 0666, proc_dir, &isp_trace_once_fops);
 
 	isp_trace_cat(ISP_CAT_POWER, "=== ISP TRACE v2 STARTED ===");
 	pr_info("isp_trace: ready, %d categories, phys=0x%pa\n",
