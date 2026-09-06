@@ -17,6 +17,7 @@
 #include <linux/delay.h>
 #include <linux/regulator/consumer.h>
 #include <linux/tegra-powergate.h>
+#include <mach/mc.h>
 
 #include <asm/atomic.h>
 
@@ -295,28 +296,6 @@ static DEFINE_MUTEX(tegra12x_powergate_disp_lock);
 
 static struct dvfs_rail *gpu_rail;
 
-#define HOTRESET_READ_COUNT	5
-static bool tegra12x_stable_hotreset_check(u32 stat_reg, u32 *stat)
-{
-	int i;
-	u32 cur_stat;
-	u32 prv_stat;
-	unsigned long flags;
-
-	spin_lock_irqsave(&tegra12x_powergate_lock, flags);
-	prv_stat = mc_read(stat_reg);
-	for (i = 0; i < HOTRESET_READ_COUNT; i++) {
-		cur_stat = mc_read(stat_reg);
-		if (cur_stat != prv_stat) {
-			spin_unlock_irqrestore(&tegra12x_powergate_lock, flags);
-			return false;
-		}
-	}
-	*stat = cur_stat;
-	spin_unlock_irqrestore(&tegra12x_powergate_lock, flags);
-	return true;
-}
-
 int tegra12x_powergate_mc_enable(int id)
 {
 	return 0;
@@ -327,13 +306,17 @@ int tegra12x_powergate_mc_disable(int id)
 	return 0;
 }
 
+/*
+ * The hot-reset flush of a partition's memory clients goes through the
+ * memory controller driver's own copy, which gives up after about a second
+ * and names the client, instead of a second copy of the loop here that
+ * would spin forever on a client stopped part way through a frame.
+ */
 int tegra12x_powergate_mc_flush(int id)
 {
-	u32 idx, rst_ctrl, rst_stat;
-	u32 rst_ctrl_reg, rst_stat_reg;
+	u32 idx;
 	enum mc_client mcClientBit;
-	unsigned long flags;
-	bool ret;
+	int ret = -EINVAL;
 
 	for (idx = 0; idx < MAX_HOTRESET_CLIENT_NUM; idx++) {
 		mcClientBit =
@@ -341,40 +324,17 @@ int tegra12x_powergate_mc_flush(int id)
 		if (mcClientBit == MC_CLIENT_LAST)
 			break;
 
-		if (mcClientBit < 32) {
-			rst_ctrl_reg = MC_CLIENT_HOTRESET_CTRL;
-			rst_stat_reg = MC_CLIENT_HOTRESET_STAT;
-		} else {
-			mcClientBit %= 32;
-			rst_ctrl_reg = MC_CLIENT_HOTRESET_CTRL_1;
-			rst_stat_reg = MC_CLIENT_HOTRESET_STAT_1;
-		}
-
-		spin_lock_irqsave(&tegra12x_powergate_lock, flags);
-
-		rst_ctrl = mc_read(rst_ctrl_reg);
-		rst_ctrl |= (1 << mcClientBit);
-		mc_write(rst_ctrl, rst_ctrl_reg);
-
-		spin_unlock_irqrestore(&tegra12x_powergate_lock, flags);
-
-		do {
-			udelay(10);
-			rst_stat = 0;
-			ret = tegra12x_stable_hotreset_check(rst_stat_reg, &rst_stat);
-			if (!ret)
-				continue;
-		} while (!(rst_stat & (1 << mcClientBit)));
+		ret = tegra_mc_flush(mcClientBit);
 	}
 
-	return 0;
+	return ret;
 }
 
 int tegra12x_powergate_mc_flush_done(int id)
 {
-	u32 idx, rst_ctrl, rst_ctrl_reg;
+	u32 idx;
 	enum mc_client mcClientBit;
-	unsigned long flags;
+	int ret = -EINVAL;
 
 	for (idx = 0; idx < MAX_HOTRESET_CLIENT_NUM; idx++) {
 		mcClientBit =
@@ -382,25 +342,12 @@ int tegra12x_powergate_mc_flush_done(int id)
 		if (mcClientBit == MC_CLIENT_LAST)
 			break;
 
-		if (mcClientBit < 32)
-			rst_ctrl_reg = MC_CLIENT_HOTRESET_CTRL;
-		else {
-			mcClientBit %= 32;
-			rst_ctrl_reg = MC_CLIENT_HOTRESET_CTRL_1;
-		}
-
-		spin_lock_irqsave(&tegra12x_powergate_lock, flags);
-
-		rst_ctrl = mc_read(rst_ctrl_reg);
-		rst_ctrl &= ~(1 << mcClientBit);
-		mc_write(rst_ctrl, rst_ctrl_reg);
-
-		spin_unlock_irqrestore(&tegra12x_powergate_lock, flags);
+		ret = tegra_mc_flush_done(mcClientBit);
 	}
 
 	wmb();
 
-	return 0;
+	return ret;
 }
 
 static int tegra12x_gpu_powergate(int id, struct powergate_partition_info *pg_info)

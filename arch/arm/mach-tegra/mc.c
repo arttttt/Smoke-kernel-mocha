@@ -196,6 +196,7 @@ int tegra_mc_flush(int id)
 	u32 rst_ctrl, rst_stat;
 	u32 rst_ctrl_reg, rst_stat_reg;
 	unsigned long flags;
+	unsigned int timeout;
 	bool ret;
 
 	if (id < 32) {
@@ -215,10 +216,35 @@ int tegra_mc_flush(int id)
 
 	spin_unlock_irqrestore(&tegra_mc_lock, flags);
 
+	/*
+	 * A client that still owes the memory controller a transaction it
+	 * can no longer finish -- a VI or ISP stopped part way through a
+	 * frame -- never reports the flush done, and this loop used to spin
+	 * on it forever with the power-domain locks held: the whole device
+	 * froze the moment VENC was powergated or a hung channel reset its
+	 * module. Give up after about a second, say which client it was, and
+	 * let the caller reset or powergate the partition anyway, exactly as
+	 * the later NVIDIA kernels do.
+	 */
+	timeout = 0;
 	do {
+		bool exit = false;
 		udelay(10);
 		rst_stat = 0;
 		ret = tegra_stable_hotreset_check(rst_stat_reg, &rst_stat);
+
+		timeout++;
+
+		/* keep lower timeout if we are running in qt or fpga */
+		exit |= (timeout > 100) && (tegra_platform_is_qt() ||
+			tegra_platform_is_fpga());
+		/* otherwise have huge timeout (~1s) */
+		exit |= timeout > 100000;
+		if (exit) {
+			WARN(1, "%s flush %d timeout\n", __func__, id);
+			return -ETIMEDOUT;
+		}
+
 		if (!ret)
 			continue;
 	} while (!(rst_stat & (1 << id)));
