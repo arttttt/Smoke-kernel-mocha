@@ -17,7 +17,6 @@
 #include <linux/delay.h>
 #include <linux/regulator/consumer.h>
 #include <linux/tegra-powergate.h>
-#include <mach/mc.h>
 
 #include <asm/atomic.h>
 
@@ -295,6 +294,12 @@ static DEFINE_SPINLOCK(tegra12x_powergate_lock);
 static DEFINE_MUTEX(tegra12x_powergate_disp_lock);
 
 static struct dvfs_rail *gpu_rail;
+
+/* From mc.c. Its header cannot be included here: powergate-priv.h has its
+ * own "mc" aperture pointer and its own mc_client enumeration, and the two
+ * clash with the memory controller driver's. */
+int tegra_mc_flush(int id);
+int tegra_mc_flush_done(int id);
 
 int tegra12x_powergate_mc_enable(int id)
 {
